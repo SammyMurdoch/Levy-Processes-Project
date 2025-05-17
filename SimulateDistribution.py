@@ -4,6 +4,8 @@ import matplotlib.pyplot as plt
 
 from abc import ABC, abstractmethod
 
+from sympy.stats.drv_types import PoissonDistribution
+
 
 class LevyTriplet:
     def __init__(self, drift, sigma, levy_measure):
@@ -82,7 +84,7 @@ class JumpSimulation:
         if not N:
             return None
 
-        uniform_samples = np.random.uniform(size=N) * self.T # Unsorted for efficiency
+        uniform_samples = np.random.uniform(size=N) * self.T  # Unsorted for efficiency
 
         return uniform_samples
 
@@ -141,6 +143,7 @@ class JumpSimulation:
         var = 0
         #var = 0.00000007256188740861436*2
         sig = np.sqrt(sig**2 + var)
+        # TODO pass this in as a parameter?
 
         simulated_values = self.simulate_brownian_motion(sig)
         return simulated_values
@@ -175,16 +178,16 @@ class JumpSimulation:
         plt.show()
 
     def export_simulation_to_csv(self, filename):
-        np.savetxt(filename, self.simulated_values, delimiter=',', fmt='%f', header='values')
+        np.savetxt(filename + ".csv", self.simulated_values, delimiter=',', fmt='%f', header='values')
 
     def get_exponential_path(self):
         return np.exp(self.simulated_values)
 
 
 class MeixnerDistribution(Distribution):
-    def __init__(self, m, a, b, d):
+    def __init__(self, m, a, b, d, drift):
         pars = {"m": m, "a": a, "b": b, "d": d}
-        levy_triplet = LevyTriplet(self.drift(m, a, b, d), 0, self.levy_measure)
+        levy_triplet = LevyTriplet(drift+m, 0, self.levy_measure)
         super().__init__(levy_triplet, pars)
 
     def levy_measure(self, x):
@@ -193,75 +196,106 @@ class MeixnerDistribution(Distribution):
 
         return numerator / denominator
 
-    def drift(self, m, a, b, d):
-        t1 = a * d * np.tan(b/2) + m  # I think m only affects the drift part
+    # def drift(self, m, a, b, d):
+    #     t1 = a * d * np.tan(b/2) + m  # I think m only affects the drift part
+    #
+    #     def integrand(x):
+    #         return np.sinh(b * x / a) / np.sinh(np.pi * x / a)
+    #
+    #     intcomp = -0.3412704536142938#sp.integrate.quad(integrand, 1, np.inf)[0]
+    #     print(intcomp)
+    #     print("here")
+    #     print(t1 - 2*d * intcomp)
+    #     #return t1 - 2*d * intcomp
+    #     return -1.645176e-05
 
-        def integrand(x):
-            return np.sinh(b * x / a) / np.sinh(np.pi * x / a)
+class NIGDistribution(Distribution):
+    def __init__(self, m, a, b, d, drift):
+        pars = {"m": m, "a": a, "b": b, "d": d}
+        levy_triplet = LevyTriplet(drift+m, 0, self.levy_measure)
 
-        intcomp = -0.3412704536142938#sp.integrate.quad(integrand, 1, np.inf)[0]
-        print(intcomp)
-        print("here")
-        print(t1 - 2*d * intcomp)
-        #return t1 - 2*d * intcomp
-        return -1.645176e-05
+        super().__init__(levy_triplet, pars)
+
+    def levy_measure(self, x):
+        frac1 = self.pars_dict["d"] * self.pars_dict["a"] / np.pi
+        frac2 = np.exp(self.pars_dict["b"] * x) * sp.special.kv(1, self.pars_dict["a"] * abs(x)) / abs(x)
+
+        return frac1 * frac2
 
 
 class StableDistribution(Distribution):
     def __init__(self, a, b, g, d):
         pars = {"a": a, "b": b, "g": g, "d": d}  # Here we assume the L1 parametrisation
-        levy_triplet = LevyTriplet(pars["d"], 0, self.levy_measure)
+        levy_triplet = LevyTriplet(None, 0, self.levy_measure)
 
         super().__init__(levy_triplet, pars)
-        self.pars_dict |= self.get_additional_parameters()
+        self.pars_dict |= self.get_kr_stable_params()
 
-        print(self.pars_dict)
+        self.levy_triplet.drift = self.pars_dict["gamma_s"]
 
     def levy_measure(self, x):
-        print(type(self))
-        print(x)
-        i = 1 if x < 0 else 0
+        i = 1 if x > 0 else 0
 
-        return (i * self.pars_dict["gamma_m"] / (abs(x)**self.pars_dict["a"]) +
-                (1-i) * self.pars_dict["gamma_p"] / (abs(x)**self.pars_dict["a"]))
+        return (i * self.pars_dict["gamma_p"] / (abs(x)**(self.pars_dict["a"]+1)) +
+                (1-i) * self.pars_dict["gamma_m"] / (abs(x)**(self.pars_dict["a"]+1)))
 
-    def get_additional_parameters(self):
-        z = np.cos(np.pi * self.pars_dict["a"]/2) * sp.special.gamma(1-self.pars_dict["a"])
-        gamma_p = (1+self.pars_dict["b"]) * self.pars_dict["g"] / (2*z)
-        gamma_m = (1-self.pars_dict["b"]) * self.pars_dict["g"] / (2*z)
+    def get_kr_stable_params(self):
+        # L1 Parameterisation
 
-        print(gamma_p, gamma_m)
+        a = self.pars_dict["a"]
+        b = self.pars_dict["b"]
+        g = self.pars_dict["g"]
+        d = self.pars_dict["d"]
 
-        return {"z": z, "gamma_p": gamma_p, "gamma_m": gamma_m}
+        gamma_bar = g**a/(-sp.special.gamma(-a)*np.cos(np.pi*a/2))
 
-    def get_drift_term(self):
-        def h(x):
-            return x/(1+x**2)
+        gamma_p = (1+b)*gamma_bar/2
+        gamma_m = (1-b)*gamma_bar/2
 
-        def change_drift_integrand(x):
-            i = 1 if abs(x) < 1 else 0
-            return h(x) - x*i * self.levy_measure(x)
+        gamma_s = d - (gamma_p-gamma_m)/(a-1)
 
-        return sp.integrate.quad(change_drift_integrand, -np.inf, np.inf)[0]
+        return {"gamma_p": gamma_p, "gamma_m": gamma_m, "gamma_s": gamma_s}
 
 
-
-
-
-
-
-# meixner_distribution = MeixnerDistribution(0, 0.01690119, 0, 0.35156535)
-# meixner_simulation = JumpSimulation(meixner_distribution, 0.004, 100, 0.06, 10000, 10000)
+# meixner_distribution = MeixnerDistribution(0, 0.01704519, -0.008522595000009334, 0.22649881, -1.645176e-05)  # this is the 'correct' one
+# meixner_simulation = JumpSimulation(meixner_distribution, 0.00001, 10000, 3.5, 10000, 10000)
 # meixner_simulation.run_simulation()
 # meixner_simulation.plot_simulation()
+# meixner_simulation.plot_simulation(exponential=False)
 
-meixner_distribution = MeixnerDistribution(0, 0.01704519, -0.008522595000009334, 0.22649881)  # this is the 'correct' one
-meixner_simulation = JumpSimulation(meixner_distribution, 0.00001, 10000, 3, 10000, 10000)
-meixner_simulation.run_simulation()
-meixner_simulation.plot_simulation()
-meixner_simulation.plot_simulation(exponential=True)
+# DRIFT and m are seperated even though m only affects the drift (additively)
+
+NIG_Distribution = NIGDistribution(4.592591e-04, 184.9736, -15.95070, 5.879460e-03, -0.0005088949957108427)
+#NIG_Distribution = NIGDistribution(0, 184.9736, 0, 5.879460e-03, -0.0005088949957108427)
+
+NIG_simulation = JumpSimulation(NIG_Distribution, 0.00001, 1000000, 3, 10000, 10000)
+NIG_simulation.run_simulation()
+NIG_simulation.plot_simulation()
+NIG_simulation.export_simulation_to_csv("NIGLevySim")
 
 
+#print(5.879460e-03*-1.595070e+01 / np.sqrt((1.849736e+02)**2 - (-1.595070e+01 )**2))
+# NIG_Distribution = NIGDistribution(4.592591e-04, 184.9736, -15.95070+1.04589, 5.879460e-03, -0.000475300892665531) # Drift wrong but looks better?
+# NIG_simulation = JumpSimulation(NIG_Distribution, 0.001, 10000, 3, 10000, 10000)
+# NIG_simulation.run_simulation()
+# NIG_simulation.plot_simulation()
+
+
+
+
+# #Uncomment this
+# Stable_Distribution = StableDistribution(1.7310550534, 0, 0.0033295311, 0)
+# Stable_simulation = JumpSimulation(Stable_Distribution, 0.0001, 1000000, 100, 10000, 10000)
+# Stable_simulation.run_simulation()
+# Stable_simulation.plot_simulation()
+#Stable_simulation.export_simulation_to_csv("StableLevySim")
+
+
+# def integrand1(x):
+#     return np.sinh((-15.95070)*x) * sp.special.kv(1, x*184.9736)
+# print(2*0.00587946*184.9736/np.pi *sp.integrate.quad(integrand1, 0, 1)[0])
+
+# Add a term in the discritisation of the levy measure that deals with the mean jump size up to infinity
 
 #stable_distribution = StableDistribution(1.5841320038, 0.0055478219, 0.0039250669, -0.0001131727)
 # stable_distribution = StableDistribution(1.5841320038, 0, 0.0039250669, 0)
@@ -290,3 +324,12 @@ meixner_simulation.plot_simulation(exponential=True)
 
 
 
+# Stable_Distribution = StableDistribution(1.7310550534, 0, 0.0033295311, 0)
+# Stable_Distribution = StableDistribution(1.731055, -1.932653e-01, 3.329531e-03, -2.128838e-05)
+#
+# # Stable_Distribution = StableDistribution(1.7310550534, -0.1932653374,  0.0033295311, -0.0003105492)
+# #
+# Stable_simulation = JumpSimulation(Stable_Distribution, 0.0001, 1000000, 100, 10000, 10000)
+# Stable_simulation.run_simulation()
+# Stable_simulation.plot_simulation()
+# Stable_simulation.export_simulation_to_csv("StableLevySim")

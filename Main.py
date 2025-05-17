@@ -63,41 +63,71 @@ def convert_sample_poisson_to_discrete_time(path_data, Nt, h=1):
     return values
 
 
-path_data = sample_compound_poisson_paths(0.5, np.random.normal, 20, 3)
-discretised_path_data = convert_sample_poisson_to_discrete_time(path_data, 5, 4)
+def one_function():
+    return 1
+
+path_data = sample_compound_poisson_paths(1,  one_function, 10, 3)
+max_len = max(len(lst) for lst in path_data)
+padded_arrays = [lst + [[np.nan, np.nan]] * (max_len - len(lst)) for lst in path_data]
+
+path_data_arrays = []
+for path in padded_arrays:
+    path_data_arrays.append(np.array(path))
+
+path_data_arrays = np.array(path_data_arrays)
+export_paths = path_data_arrays.reshape(-1, path_data_arrays.shape[-1])
+header = "Time, Value"
+np.savetxt("PoissonSim" + ".csv", export_paths, delimiter=',', fmt='%f', header=header)
+
+
+print(export_paths)
+print(export_paths.shape)
+
+
+
+
+# export_poisson_array = np.array(padded_arrays)
+# print(export_poisson_array.shape)
+#
+#
+
+#discretised_path_data = convert_sample_poisson_to_discrete_time(path_data, 10, 1)
 
 for path in path_data:
     x, y = zip(*path)
-    plt.plot(x, y, drawstyle='steps-post')
+    plt.plot(list(x[:-1]) + [x[-1]], y, drawstyle='steps-post')
 
 plt.show()
 
-for path in discretised_path_data:
-    x = np.arange(0, 20, 4)
-    plt.plot(x, path)
+# for path in discretised_path_data:
+#     x = np.arange(0, 50, 1)
+#     plt.plot(x, path)
+#
+# plt.show()
+#
+#
+# path_data2 = sample_compound_poisson_paths(0.5, np.random.exponential, 20, 3)
+# for path in path_data2:
+#     x, y = zip(*path)
+#     plt.plot(x, y, drawstyle='steps-post')
 
 plt.show()
 
 
-path_data2 = sample_compound_poisson_paths(0.5, np.random.exponential, 20, 3)
-for path in path_data2:
-    x, y = zip(*path)
-    plt.plot(x, y, drawstyle='steps-post')
-
-plt.show()
 
 
 
-
-
-
-brownian_path_data = simulate_brownian_motion(20, 20, 5)
-brownian_time_data = np.arange(0, 20, 1)
-
-for j in range(brownian_path_data.shape[1]):
-    plt.plot(brownian_time_data, brownian_path_data[:, j])
-
-plt.show()
-
+#
+# brownian_path_data = simulate_brownian_motion(1000, 1000, 3)
+# brownian_time_data = np.arange(0, 1000, 1)
+#
+# print(brownian_path_data.shape)
+#
+# for j in range(brownian_path_data.shape[1]):
+#     plt.plot(brownian_time_data, brownian_path_data[:, j])
+#
+# plt.show()
+#
+# np.savetxt("BrownianSim" + ".csv", brownian_path_data, delimiter=',', fmt='%f')
 
 
