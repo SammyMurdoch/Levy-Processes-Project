@@ -1,6 +1,7 @@
 import scipy as sp
 import numpy as np
 import matplotlib.pyplot as plt
+import statistics
 
 from abc import ABC, abstractmethod
 
@@ -209,6 +210,12 @@ class MeixnerDistribution(Distribution):
     #     #return t1 - 2*d * intcomp
     #     return -1.645176e-05
 
+
+# class NormalDistribution:
+#     def __init__(self, m, v):
+#         pars = {"m": m, "v": v}
+#         l
+
 class NIGDistribution(Distribution):
     def __init__(self, m, a, b, d, drift):
         pars = {"m": m, "a": a, "b": b, "d": d}
@@ -227,7 +234,7 @@ class StableDistribution(Distribution):
     def __init__(self, a, b, g, d):
         pars = {"a": a, "b": b, "g": g, "d": d}  # Here we assume the L1 parametrisation
         levy_triplet = LevyTriplet(None, 0, self.levy_measure)
-
+        # 1.9008248279757293e-05 is sigma ish
         super().__init__(levy_triplet, pars)
         self.pars_dict |= self.get_kr_stable_params()
 
@@ -254,6 +261,8 @@ class StableDistribution(Distribution):
 
         gamma_s = d - (gamma_p-gamma_m)/(a-1)
 
+        print(gamma_p, gamma_m, gamma_s)
+
         return {"gamma_p": gamma_p, "gamma_m": gamma_m, "gamma_s": gamma_s}
 
 
@@ -265,13 +274,13 @@ class StableDistribution(Distribution):
 
 # DRIFT and m are seperated even though m only affects the drift (additively)
 
-NIG_Distribution = NIGDistribution(4.592591e-04, 184.9736, -15.95070, 5.879460e-03, -0.0005088949957108427)
-#NIG_Distribution = NIGDistribution(0, 184.9736, 0, 5.879460e-03, -0.0005088949957108427)
-
-NIG_simulation = JumpSimulation(NIG_Distribution, 0.00001, 1000000, 3, 10000, 10000)
-NIG_simulation.run_simulation()
-NIG_simulation.plot_simulation()
-NIG_simulation.export_simulation_to_csv("NIGLevySim")
+# NIG_Distribution = NIGDistribution(4.592591e-04, 184.9736, -15.95070, 5.879460e-03, -0.0005088949957108427)
+# #NIG_Distribution = NIGDistribution(0, 184.9736, 0, 5.879460e-03, -0.0005088949957108427)
+#
+# NIG_simulation = JumpSimulation(NIG_Distribution, 0.00001, 1000000, 3, 10000, 10000)
+# NIG_simulation.run_simulation()
+# NIG_simulation.plot_simulation()
+# NIG_simulation.export_simulation_to_csv("NIGLevySim")
 
 
 #print(5.879460e-03*-1.595070e+01 / np.sqrt((1.849736e+02)**2 - (-1.595070e+01 )**2))
@@ -327,9 +336,106 @@ NIG_simulation.export_simulation_to_csv("NIGLevySim")
 # Stable_Distribution = StableDistribution(1.7310550534, 0, 0.0033295311, 0)
 # Stable_Distribution = StableDistribution(1.731055, -1.932653e-01, 3.329531e-03, -2.128838e-05)
 #
-# # Stable_Distribution = StableDistribution(1.7310550534, -0.1932653374,  0.0033295311, -0.0003105492)
-# #
-# Stable_simulation = JumpSimulation(Stable_Distribution, 0.0001, 1000000, 100, 10000, 10000)
+# Stable_Distribution = StableDistribution(1.7310550534, -0.1932653374,  0.0033295311, -0.0003105492)
+#Stable_Distribution = StableDistribution(1.7310550534, -0.1932653374,  0.0033295311, 0)
+Stable_Distribution = StableDistribution(1.7310550534, 0,  0.00372, 0)
+#
+
+# Stable_Distribution = StableDistribution(2, 0,  1/np.sqrt(2), 0)
+
+
+# Stable_simulation = JumpSimulation(Stable_Distribution, 0.00005, 100000, 5, 10000, 10000)
 # Stable_simulation.run_simulation()
 # Stable_simulation.plot_simulation()
 # Stable_simulation.export_simulation_to_csv("StableLevySim")
+
+#7.667306381293514x10-6
+#1.134094189846378x10-5
+
+# print(7.667306381293514e-6 + 1.134094189846378e-5)
+
+
+usd_meixner_distribution = MeixnerDistribution(-1.645186e-05, 1.704519e-02, 0, 2.264988e-01, 0)  # this is the 'correct' one usd
+aud_meixner_distribution = MeixnerDistribution(-0.0000121, 0.00867, 0, 0.641, 0)  # this is the 'correct' one aud
+jpy_meixner_distribution = MeixnerDistribution(-0.0000200, 0.0146, 0, 0.378, 0)  # this is the 'correct' one jpy
+
+
+#  Drift of a symmetric meixner is m (included in code already)
+
+
+uk_q = 3.91/100  # UK
+uk_q = (1 + uk_q)**(1/252) - 1
+
+us_r = 4.25/100
+us_r = (1 + us_r)**(1/252) - 1
+
+jpy_r = 0.52/100
+jpy_r = (1 + jpy_r)**(1/252) - 1
+
+aud_r = 3.69/100
+aud_r = (1 + aud_r)**(1/252) - 1
+
+usd_X0 = 1.35
+jpy_X0 = 193.91
+aud_X0 = 2.09
+
+
+final_values = []
+sim_N = 100  # Up this to 1000
+usd_strike_prices = np.array([1.25, 1.30, 1.32, 1.35, 1.38, 1.40, 1.45])
+usd_strike_prices = np.linspace(1.25, 1.45, num=51)
+jpy_strike_prices = np.array([168.7, 180.58, 185.27, 190.18, 195.43, 199.35, 208.32])
+# jpy_strike_prices = np.linspace(165, 210, num=51)
+
+aud_strike_prices = np.linspace(1.8, 2.3, num=51)
+
+T = 126
+
+
+def get_option_prices(distribution, sim_N, X0, strike_prices, r, q, T):
+    simulated_payoffs = np.empty((sim_N, len(strike_prices)))
+
+    for i in range(sim_N):
+        print(i)
+        meixner_simulation = JumpSimulation(distribution, 0.00001, 10000, 1, T, T)
+        meixner_simulation.run_simulation()
+        single_sim_payoff = X0*np.exp(meixner_simulation.simulated_values[-1])-strike_prices*np.exp(T*(q-r))
+        simulated_payoffs[i, ] = np.maximum(0, single_sim_payoff)
+        # print(single_sim_payoff)
+        meixner_simulation.plot_simulation(exponential=False)
+        # meixner_simulation.export_simulation_to_csv("meixner_simulation")
+    print(np.mean(simulated_payoffs, axis=0))
+
+
+# get_option_prices(aud_meixner_distribution, sim_N, usd_X0, usd_strike_prices, us_r, uk_q, T)
+# get_option_prices(usd_meixner_distribution, sim_N, usd_X0, usd_strike_prices, us_r, uk_q, T)
+get_option_prices(jpy_meixner_distribution, sim_N, jpy_X0, jpy_strike_prices, jpy_r, uk_q, T)
+
+
+
+
+# print(statistics.variance(final_values))
+
+# for i in range(1):
+#     meixner_simulation = JumpSimulation(meixner_distribution, 0.00001, 10000, 3.5, 10000, 10000)
+#     meixner_simulation.run_simulation()
+#     final_values.append(meixner_simulation.simulated_values[-1])
+#
+#     meixner_simulation.plot_simulation()
+#     meixner_simulation.plot_simulation(exponential=True)
+#     meixner_simulation.export_simulation_to_csv(f"meixner_simulation{i}")
+
+# meixner_distribution = MeixnerDistribution(-0.0000165, 1.704519e-02, 0, 2.264988e-01, 0)  # this is the 'correct' one
+
+
+# NIG_Distribution = NIGDistribution(0, 184.9736, 0, 5.879460e-03, 0)
+#
+# NIG_simulation = JumpSimulation(NIG_Distribution, 0.00001, 10000, 1, 10000, 10000)
+# NIG_simulation.run_simulation()
+# NIG_simulation.plot_simulation()
+# NIG_simulation.export_simulation_to_csv("NIGLevySim")
+
+
+# def integrand1(x):
+#     return np.sinh((-15.95070)*x) * sp.special.kv(1, x*184.9736)
+# print(2*0.00587946*184.9736/np.pi *sp.integrate.quad(integrand1, 0, 1)[0])# + 0.0009520901)
